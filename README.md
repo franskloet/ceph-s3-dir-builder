@@ -23,6 +23,29 @@ A Python utility for managing Ceph S3-compatible directory storage with hierarch
 
 ## Installation
 
+### Quick Install (Recommended)
+
+The install script creates wrapper commands for easy use:
+
+```bash
+# User install (no root required, installs to ~/bin)
+./install.sh
+
+# System-wide install (requires root)
+sudo ./install.sh
+
+# Custom location
+./install.sh /path/to/install/dir
+```
+
+After installation, you can use the tools without `.py` extension:
+```bash
+dir-builder config.yaml --dry-run
+export-config --bucket my-bucket
+```
+
+### Manual Installation
+
 1. Ensure aws-tools is installed:
 ```bash
 cd /home/frans/Development/storage/aws-tools
@@ -35,9 +58,15 @@ source ~/.bashrc
 pip install pyyaml
 ```
 
-3. Make dir-builder executable:
+3. Make scripts executable:
 ```bash
-chmod +x dir-builder.py
+chmod +x dir-builder.py export-config.py
+```
+
+Then run with:
+```bash
+./dir-builder.py config.yaml
+./export-config.py --bucket my-bucket
 ```
 
 ## Quick Start

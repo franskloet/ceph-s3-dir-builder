@@ -12,6 +12,7 @@ user_groups:
 
 directories:
   name: ""
+
   children:
     - name: users
       children:
