@@ -541,5 +541,5 @@ Use freely in your environment.
 
 ## See Also
 
-- [aws-tools README](../aws-tools/README.md) - Underlying IAM management commands
+- [aws-tools README](https://github.com/franskloet/aws-tools/README.md) - Underlying IAM management commands
 - [Ceph RGW Documentation](https://docs.ceph.com/en/latest/radosgw/) - Ceph S3 gateway docs
