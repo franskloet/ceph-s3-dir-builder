@@ -1,0 +1,73 @@
+# Example configuration for a research project directory structure
+# This creates a hierarchical directory structure with IAM access control
+
+bucket: research-project-2025
+tenant: sils_mns  # Optional: defaults to $AWS_DEFAULT_TENANT
+
+# Create the bucket if it doesn't exist
+create_bucket: true
+bucket_acl: private
+
+# Create directory placeholders in S3
+create_directories: true
+
+# Create IAM users (set to false if users already exist)
+create_users: false
+
+# Map users to groups
+user_groups:
+  alice: [researchers, data-team]
+  bob: researchers
+  charlie: data-team
+
+# Directory tree structure with access control
+directories:
+  name: ""  # Root
+  children:
+    - name: raw-data
+      access:
+        level: read
+        groups: [researchers]
+      children:
+        - name: experiments
+          access:
+            level: full
+            users: [alice]
+            groups: [data-team]
+        - name: samples
+          access:
+            level: read
+            groups: [researchers]
+    
+    - name: processed
+      access:
+        level: full
+        groups: [data-team]
+      children:
+        - name: analysis
+          access:
+            level: full
+            users: [alice, bob]
+        - name: results
+          access:
+            level: read
+            groups: [researchers]
+    
+    - name: publications
+      access:
+        level: read
+        groups: [researchers]
+      children:
+        - name: drafts
+          access:
+            level: full
+            users: [alice]
+        - name: figures
+          access:
+            level: full
+            groups: [data-team]
+    
+    - name: shared
+      access:
+        level: full
+        groups: [researchers, data-team]

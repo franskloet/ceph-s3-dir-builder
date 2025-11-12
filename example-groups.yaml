@@ -1,0 +1,52 @@
+# Example with explicit group definitions
+# Shows two ways to define group memberships
+
+bucket: department-storage
+create_bucket: true
+create_directories: true
+create_users: true
+create_groups: true  # Set to false if groups already exist
+
+# Method 1: Define groups with their members (recommended)
+groups:
+  # Simple list format
+  admin-group: [alice, admin]
+  
+  # Or detailed format (for future extensibility)
+  researchers:
+    members: [alice, bob, charlie]
+  
+  data-team:
+    members: [charlie, david]
+
+# Method 2: Map users to groups (alternative)
+# Note: You can use both methods, they complement each other
+user_groups:
+  eve: [admin-group, researchers]
+
+directories:
+  name: ""
+  children:
+    - name: admin
+      access:
+        level: full
+        groups: [admin-group]
+    
+    - name: research
+      access:
+        level: full
+        groups: [researchers]
+      children:
+        - name: data
+          access:
+            level: full
+            groups: [data-team]
+        - name: papers
+          access:
+            level: read
+            groups: [researchers]
+    
+    - name: shared
+      access:
+        level: read
+        groups: [researchers, data-team]

@@ -1,0 +1,36 @@
+# Simple example: User home directories with team shared folder
+
+bucket: team-storage
+create_bucket: false
+create_directories: true
+create_users: true
+
+user_groups:
+  john: developers
+  jane: developers
+  admin: admins
+
+directories:
+  name: ""
+  children:
+    - name: users
+      children:
+        - name: john
+          access:
+            level: full
+            users: [john]
+        - name: jane
+          access:
+            level: full
+            users: [jane]
+    
+    - name: team
+      access:
+        level: full
+        groups: [developers]
+    
+    - name: backups
+      access:
+        level: read
+        groups: [developers]
+        users: [admin]

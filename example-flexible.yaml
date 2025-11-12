@@ -1,0 +1,78 @@
+# Example with flexible per-entity access levels
+# Demonstrates the new format that allows different access levels for different users/groups
+
+bucket: project-data
+create_bucket: false
+create_directories: true
+create_users: false
+create_groups: true
+
+# Define groups
+groups:
+  admins: [alice]
+  developers: [bob, charlie]
+  viewers: [david]
+
+directories:
+  name: ""
+  children:
+    # Example 1: Multiple users with different access levels
+    - name: shared
+      access:
+        - entity: alice
+          type: user
+          level: full
+        - entity: bob
+          type: user
+          level: write
+        - entity: charlie
+          type: user
+          level: read
+    
+    # Example 2: Mix of users and groups with different levels
+    - name: code
+      access:
+        - entity: admins
+          type: group
+          level: full
+        - entity: developers
+          type: group
+          level: write
+        - entity: viewers
+          type: group
+          level: read
+    
+    # Example 3: Complex nested structure
+    - name: data
+      access:
+        - entity: admins
+          type: group
+          level: full
+      children:
+        - name: raw
+          access:
+            - entity: developers
+              type: group
+              level: write
+            - entity: viewers
+              type: group
+              level: read
+        
+        - name: processed
+          access:
+            - entity: admins
+              type: group
+              level: full
+            - entity: alice
+              type: user
+              level: full
+            - entity: bob
+              type: user
+              level: read
+    
+    # Example 4: Backward compatible - old format still works
+    - name: legacy
+      access:
+        level: full
+        users: [alice]
+        groups: [admins]

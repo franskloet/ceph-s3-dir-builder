@@ -1,0 +1,39 @@
+# Simple example: User home directories with team shared folder
+
+bucket: groups
+create_bucket: false
+create_directories: true
+create_users: true
+
+user_groups:
+  john: mns_pi
+  jane: mns_pi
+  admin: admins
+
+directories:
+  name: ""
+  access:
+    - entity: mns_pi
+      type: group
+      level: read
+    - entity: admins
+      type: group
+      level: read
+  children:
+    - name: john      
+      access:
+        - entity: john
+          type: user            
+          level: full     
+    - name: jane
+      access:      
+         level: full
+         users: [jane]
+    - name: shared
+      access:
+        - entity: mns_pi
+          type: group
+          level: write
+        - entity: admins
+          type: group
+          level: read        
