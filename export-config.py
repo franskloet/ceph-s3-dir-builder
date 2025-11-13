@@ -149,6 +149,44 @@ def get_inline_group_policies(profile: Optional[str]) -> Dict[str, List[Tuple[st
     return result
 
 
+def get_managed_group_policies(profile: Optional[str]) -> Dict[str, List[Tuple[str, Optional[str], str]]]:
+    """Return mapping: group -> list of (bucket, prefix, level) from managed policies attached to groups."""
+    result: Dict[str, List[Tuple[str, Optional[str], str]]] = defaultdict(list)
+    groups = run_aws(["aws", "iam", "list-groups"], profile).get('Groups', [])
+    for g in groups:
+        gname = g['GroupName']
+        attached = run_aws(["aws", "iam", "list-attached-group-policies", "--group-name", gname], profile).get('AttachedPolicies', [])
+        for pol in attached:
+            pol_arn = pol['PolicyArn']
+            # Get policy default version
+            pol_info = run_aws(["aws", "iam", "get-policy", "--policy-arn", pol_arn], profile).get('Policy', {})
+            default_version = pol_info.get('DefaultVersionId')
+            if not default_version:
+                continue
+            pol_version = run_aws(["aws", "iam", "get-policy-version", "--policy-arn", pol_arn, "--version-id", default_version], profile)
+            doc = pol_version.get('PolicyVersion', {}).get('Document')
+            if not doc:
+                continue
+            statements = doc.get('Statement', [])
+            if isinstance(statements, dict):
+                statements = [statements]
+            actions: List[str] = []
+            for st in statements:
+                act = st.get('Action')
+                if not act:
+                    continue
+                if isinstance(act, list):
+                    actions.extend(act)
+                else:
+                    actions.append(act)
+            level = compute_level_from_actions(actions)
+            for bucket, prefix in parse_policy_resources(doc):
+                if not bucket or bucket == '*' or bucket == '':
+                    continue
+                result[gname].append((bucket, prefix, level))
+    return result
+
+
 def get_inline_user_policies(profile: Optional[str]) -> Dict[str, List[Tuple[str, Optional[str], str]]]:
     """Return mapping: user -> list of (bucket, prefix, level) from inline user policies."""
     result: Dict[str, List[Tuple[str, Optional[str], str]]] = defaultdict(list)
@@ -181,6 +219,155 @@ def get_inline_user_policies(profile: Optional[str]) -> Dict[str, List[Tuple[str
                     continue
                 result[uname].append((bucket, prefix, level))
     return result
+
+
+def get_managed_user_policies(profile: Optional[str]) -> Dict[str, List[Tuple[str, Optional[str], str]]]:
+    """Return mapping: user -> list of (bucket, prefix, level) from managed policies attached to users."""
+    result: Dict[str, List[Tuple[str, Optional[str], str]]] = defaultdict(list)
+    users = run_aws(["aws", "iam", "list-users"], profile).get('Users', [])
+    for u in users:
+        uname = u['UserName']
+        attached = run_aws(["aws", "iam", "list-attached-user-policies", "--user-name", uname], profile).get('AttachedPolicies', [])
+        for pol in attached:
+            pol_arn = pol['PolicyArn']
+            pol_info = run_aws(["aws", "iam", "get-policy", "--policy-arn", pol_arn], profile).get('Policy', {})
+            default_version = pol_info.get('DefaultVersionId')
+            if not default_version:
+                continue
+            pol_version = run_aws(["aws", "iam", "get-policy-version", "--policy-arn", pol_arn, "--version-id", default_version], profile)
+            doc = pol_version.get('PolicyVersion', {}).get('Document')
+            if not doc:
+                continue
+            statements = doc.get('Statement', [])
+            if isinstance(statements, dict):
+                statements = [statements]
+            actions: List[str] = []
+            for st in statements:
+                act = st.get('Action')
+                if not act:
+                    continue
+                if isinstance(act, list):
+                    actions.extend(act)
+                else:
+                    actions.append(act)
+            level = compute_level_from_actions(actions)
+            for bucket, prefix in parse_policy_resources(doc):
+                if not bucket or bucket == '*' or bucket == '':
+                    continue
+                result[uname].append((bucket, prefix, level))
+    return result
+
+
+def get_bucket_policies(profile: Optional[str]) -> Dict[str, List[Tuple[str, str, Optional[str], str]]]:
+    """Return mapping: bucket -> list of (entity, entity_type, prefix, level) from bucket policies.
+    entity_type can be 'user', 'group', or 'principal'
+    """
+    result: Dict[str, List[Tuple[str, str, Optional[str], str]]] = defaultdict(list)
+    # List all buckets
+    try:
+        buckets_result = run_aws(["aws", "s3api", "list-buckets"], profile)
+        buckets = buckets_result.get('Buckets', [])
+    except:
+        # If list-buckets fails, return empty
+        return result
+    
+    for bucket_info in buckets:
+        bucket = bucket_info['Name']
+        try:
+            policy_result = run_aws(["aws", "s3api", "get-bucket-policy", "--bucket", bucket], profile)
+            policy_str = policy_result.get('Policy', '')
+            if not policy_str:
+                continue
+            doc = json.loads(policy_str)
+            statements = doc.get('Statement', [])
+            if isinstance(statements, dict):
+                statements = [statements]
+            
+            for st in statements:
+                # Get actions to determine level
+                act = st.get('Action')
+                if not act:
+                    continue
+                actions = act if isinstance(act, list) else [act]
+                level = compute_level_from_actions(actions)
+                
+                # Extract principals
+                principal = st.get('Principal')
+                if not principal:
+                    continue
+                
+                # Handle different principal formats
+                principals = []
+                if isinstance(principal, str):
+                    if principal == '*':
+                        principals.append(('*', 'principal'))
+                elif isinstance(principal, dict):
+                    # AWS format: {"AWS": ["arn:aws:iam::account:user/name", ...]}
+                    for key, value in principal.items():
+                        if key == 'AWS':
+                            aws_principals = value if isinstance(value, list) else [value]
+                            for arn in aws_principals:
+                                if isinstance(arn, str):
+                                    # Parse ARN to extract user/group name
+                                    if ':user/' in arn:
+                                        entity_name = arn.split(':user/')[-1]
+                                        principals.append((entity_name, 'user'))
+                                    elif ':group/' in arn:
+                                        entity_name = arn.split(':group/')[-1]
+                                        principals.append((entity_name, 'group'))
+                                    else:
+                                        principals.append((arn, 'principal'))
+                
+                # Extract resources to get prefixes
+                resources_list = parse_policy_resources(doc)
+                for res_bucket, prefix in resources_list:
+                    if res_bucket == bucket:
+                        for entity_name, entity_type in principals:
+                            result[bucket].append((entity_name, entity_type, prefix, level))
+        except RuntimeError:
+            # No bucket policy or access denied
+            continue
+    
+    return result
+
+
+def get_s3_directory_structure(bucket: str, profile: Optional[str]) -> List[str]:
+    """Discover directory (prefix) structure in an S3 bucket.
+    Returns list of prefixes (directory paths ending with /).
+    """
+    prefixes = set()
+    try:
+        # List objects with delimiter to get common prefixes (directories)
+        result = run_aws(["aws", "s3api", "list-objects-v2", "--bucket", bucket, "--delimiter", "/"], profile)
+        
+        # Get top-level directories
+        for prefix_obj in result.get('CommonPrefixes', []):
+            prefix = prefix_obj.get('Prefix', '')
+            if prefix:
+                prefixes.add(prefix)
+                # Recursively get subdirectories
+                prefixes.update(_list_subdirectories(bucket, prefix, profile))
+    except RuntimeError:
+        # Bucket doesn't exist or access denied
+        pass
+    
+    return sorted(prefixes)
+
+
+def _list_subdirectories(bucket: str, prefix: str, profile: Optional[str]) -> set:
+    """Recursively list subdirectories under a prefix."""
+    subdirs = set()
+    try:
+        result = run_aws(["aws", "s3api", "list-objects-v2", "--bucket", bucket, "--prefix", prefix, "--delimiter", "/"], profile)
+        for prefix_obj in result.get('CommonPrefixes', []):
+            subdir = prefix_obj.get('Prefix', '')
+            if subdir:
+                subdirs.add(subdir)
+                # Recurse deeper
+                subdirs.update(_list_subdirectories(bucket, subdir, profile))
+    except RuntimeError:
+        pass
+    return subdirs
 
 
 def get_group_members(profile: Optional[str]) -> Dict[str, List[str]]:
@@ -280,9 +467,21 @@ def main():
 
     # Discover access from IAM
     try:
+        print("Reading inline group policies...", file=sys.stderr)
         group_pols = get_inline_group_policies(args.profile)
+        print("Reading managed group policies...", file=sys.stderr)
+        managed_group_pols = get_managed_group_policies(args.profile)
+        print("Reading inline user policies...", file=sys.stderr)
         user_pols = get_inline_user_policies(args.profile)
+        print("Reading managed user policies...", file=sys.stderr)
+        managed_user_pols = get_managed_user_policies(args.profile)
+        print("Reading bucket policies...", file=sys.stderr)
+        bucket_pols = get_bucket_policies(args.profile)
+        print("Reading group memberships...", file=sys.stderr)
         group_members = get_group_members(args.profile)
+        print("Listing all buckets...", file=sys.stderr)
+        all_buckets_result = run_aws(["aws", "s3api", "list-buckets"], args.profile)
+        all_buckets = [b['Name'] for b in all_buckets_result.get('Buckets', [])]
     except Exception as e:
         print(f"Error while reading IAM: {e}", file=sys.stderr)
         sys.exit(1)
@@ -290,7 +489,7 @@ def main():
     # Build unified access map: bucket -> prefix -> [EntityAccess]
     access_map: Dict[str, Dict[str, List[EntityAccess]]] = defaultdict(lambda: defaultdict(list))
 
-    # Groups
+    # Inline group policies
     for g, entries in group_pols.items():
         for bucket, prefix, level in entries:
             if args.bucket and bucket != args.bucket:
@@ -299,7 +498,16 @@ def main():
                 continue
             access_map[bucket][prefix or ''].append(EntityAccess(entity=g, entity_type='group', level=level))
 
-    # Users
+    # Managed group policies
+    for g, entries in managed_group_pols.items():
+        for bucket, prefix, level in entries:
+            if args.bucket and bucket != args.bucket:
+                continue
+            if args.prefix and prefix and not prefix.startswith(args.prefix.rstrip('/') + '/'):
+                continue
+            access_map[bucket][prefix or ''].append(EntityAccess(entity=g, entity_type='group', level=level))
+
+    # Inline user policies
     for u, entries in user_pols.items():
         for bucket, prefix, level in entries:
             if args.bucket and bucket != args.bucket:
@@ -308,9 +516,48 @@ def main():
                 continue
             access_map[bucket][prefix or ''].append(EntityAccess(entity=u, entity_type='user', level=level))
 
-    if args.bucket and args.bucket not in access_map:
-        print(f"No inline IAM access discovered for bucket '{args.bucket}'. Nothing to export.", file=sys.stderr)
-        sys.exit(1)
+    # Managed user policies
+    for u, entries in managed_user_pols.items():
+        for bucket, prefix, level in entries:
+            if args.bucket and bucket != args.bucket:
+                continue
+            if args.prefix and prefix and not prefix.startswith(args.prefix.rstrip('/') + '/'):
+                continue
+            access_map[bucket][prefix or ''].append(EntityAccess(entity=u, entity_type='user', level=level))
+
+    # Bucket policies
+    for bucket, entries in bucket_pols.items():
+        if args.bucket and bucket != args.bucket:
+            continue
+        for entity, entity_type, prefix, level in entries:
+            if args.prefix and prefix and not prefix.startswith(args.prefix.rstrip('/') + '/'):
+                continue
+            access_map[bucket][prefix or ''].append(EntityAccess(entity=entity, entity_type=entity_type, level=level))
+
+    # Ensure all buckets are in the access_map (even if they have no policies)
+    # This allows generating template configs for all buckets
+    if args.bucket:
+        # Single bucket mode: ensure the requested bucket is included
+        if args.bucket not in access_map:
+            access_map[args.bucket] = defaultdict(list)
+    else:
+        # All buckets mode: include every bucket
+        for bucket in all_buckets:
+            if bucket not in access_map:
+                access_map[bucket] = defaultdict(list)
+
+    # Discover S3 directory structure for buckets without policies
+    # This populates the tree with actual directories from S3
+    print("Discovering S3 directory structures...", file=sys.stderr)
+    for bucket in access_map.keys():
+        # Only discover structure if there are no prefix-specific policies
+        if not any(prefix for prefix in access_map[bucket].keys() if prefix):
+            # No prefixes in policies, discover from S3
+            prefixes = get_s3_directory_structure(bucket, args.profile)
+            for prefix in prefixes:
+                # Add empty access list for each discovered prefix
+                if prefix not in access_map[bucket]:
+                    access_map[bucket][prefix] = []
 
     # Build trees
     trees = {bucket: tree for bucket, tree in ((b, build_tree_from_access({b: pref_map})[b]) for b, pref_map in access_map.items())}
