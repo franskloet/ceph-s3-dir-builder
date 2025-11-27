@@ -471,8 +471,8 @@ Examples:
     parser.add_argument('config', help='Path to YAML configuration file')
     parser.add_argument(
         '--aws-tools',
-        default='../aws-tools',
-        help='Path to aws-tools directory (default: ../aws-tools)'
+        default=None,
+        help='Path to aws-tools directory (default: $AWS_SCRIPTS_DIR or ../aws-tools)'
     )
     parser.add_argument(
         '--tenant',
@@ -491,10 +491,30 @@ Examples:
     
     args = parser.parse_args()
     
-    # Resolve aws-tools path
-    aws_tools_path = Path(args.aws_tools).resolve()
+    # Resolve aws-tools path with fallback priority:
+    # 1. Command line argument (--aws-tools)
+    # 2. AWS_SCRIPTS_DIR environment variable
+    # 3. Default relative path (../aws-tools)
+    if args.aws_tools:
+        aws_tools_path = Path(args.aws_tools)
+    elif os.environ.get('AWS_SCRIPTS_DIR'):
+        aws_tools_path = Path(os.environ['AWS_SCRIPTS_DIR'])
+    else:
+        aws_tools_path = Path('../aws-tools')
+    
+    aws_tools_path = aws_tools_path.resolve()
+    
     if not aws_tools_path.exists():
         print(f"Error: aws-tools directory not found: {aws_tools_path}")
+        print(f"")
+        print(f"Tried:")
+        if args.aws_tools:
+            print(f"  --aws-tools: {args.aws_tools}")
+        if os.environ.get('AWS_SCRIPTS_DIR'):
+            print(f"  $AWS_SCRIPTS_DIR: {os.environ['AWS_SCRIPTS_DIR']}")
+        print(f"  default: ../aws-tools")
+        print(f"")
+        print(f"Please specify the correct path with --aws-tools or set AWS_SCRIPTS_DIR")
         sys.exit(1)
     
     builder = DirBuilder(

@@ -50,8 +50,17 @@ export-config --bucket my-bucket
 ```bash
 cd /home/frans/Development/storage/aws-tools
 ./install.sh ~/s3/AWS
-source ~/.bashrc
+source ~/.bashrc  # This sets AWS_SCRIPTS_DIR environment variable
 ```
+
+**Important**: The aws-tools installation sets the `AWS_SCRIPTS_DIR` environment variable, which dir-builder uses to locate aws-tools commands. After installation, verify it's set:
+```bash
+echo $AWS_SCRIPTS_DIR  # Should show path to aws-tools directory
+```
+
+If `AWS_SCRIPTS_DIR` is not set, you'll need to either:
+- Re-source your shell config: `source ~/.bashrc`
+- Or specify `--aws-tools` path manually when running dir-builder
 
 2. Install Python dependencies:
 ```bash
@@ -65,11 +74,13 @@ chmod +x dir-builder.py export-config.py
 
 Then run with:
 ```bash
-./dir-builder.py config.yaml
+./dir-builder.py config.yaml  # Uses $AWS_SCRIPTS_DIR automatically
 ./export-config.py --bucket my-bucket
 ```
 
 ## Quick Start
+
+**Prerequisites**: Ensure aws-tools is installed and `$AWS_SCRIPTS_DIR` is set (see Installation above).
 
 1. Create a configuration file (see examples below)
 2. Preview changes with dry-run:
@@ -79,6 +90,11 @@ Then run with:
 3. Apply the configuration:
 ```bash
 ./dir-builder.py my-config.yaml
+```
+
+**Note**: If `$AWS_SCRIPTS_DIR` is not set, you'll need to specify the aws-tools location:
+```bash
+./dir-builder.py my-config.yaml --aws-tools /path/to/aws-tools
 ```
 
 ## Configuration Format
@@ -367,11 +383,22 @@ positional arguments:
 
 optional arguments:
   -h, --help            Show help message
-  --aws-tools AWS_TOOLS Path to aws-tools directory (default: ../aws-tools)
+  --aws-tools AWS_TOOLS Path to aws-tools directory
+                        (default: $AWS_SCRIPTS_DIR or ../aws-tools)
   --tenant TENANT       Ceph tenant name (default: $AWS_DEFAULT_TENANT)
   --dry-run             Preview changes without executing them
   --print-tree          Only print the directory tree and exit
 ```
+
+#### aws-tools Path Resolution
+
+The script locates aws-tools using the following priority:
+
+1. **Command line argument**: `--aws-tools /path/to/aws-tools`
+2. **Environment variable**: `$AWS_SCRIPTS_DIR` (set by aws-tools installation)
+3. **Default relative path**: `../aws-tools`
+
+If you've installed aws-tools using its install script, `$AWS_SCRIPTS_DIR` is automatically set and you don't need to specify `--aws-tools`.
 
 ## How It Works
 
@@ -590,9 +617,31 @@ This utility uses your existing aws-tools commands:
 ## Troubleshooting
 
 ### "aws-tools directory not found"
-Ensure the `--aws-tools` path is correct:
+
+The script tries to locate aws-tools in this order:
+1. `--aws-tools` argument (if provided)
+2. `$AWS_SCRIPTS_DIR` environment variable
+3. `../aws-tools` (default relative path)
+
+Solutions:
+
+**Option 1: Use the environment variable (recommended)**
+```bash
+# If aws-tools is installed, source the aliases file
+source ~/.bashrc  # or wherever aws-aliases.sh is sourced
+echo $AWS_SCRIPTS_DIR  # Should show the aws-tools path
+./dir-builder.py config.yaml  # No --aws-tools needed
+```
+
+**Option 2: Specify the path explicitly**
 ```bash
 ./dir-builder.py config.yaml --aws-tools /home/frans/Development/storage/aws-tools
+```
+
+**Option 3: Set the environment variable manually**
+```bash
+export AWS_SCRIPTS_DIR=/home/frans/Development/storage/aws-tools
+./dir-builder.py config.yaml
 ```
 
 ### "User already exists"
@@ -687,9 +736,11 @@ See the included example files:
 
 ## Environment Variables
 
+- `AWS_SCRIPTS_DIR`: Location of aws-tools directory (set by aws-tools installation)
+  - Used as fallback if `--aws-tools` is not specified
+  - Automatically set when you install aws-tools and source the aliases file
 - `AWS_DEFAULT_TENANT`: Default Ceph tenant (can be overridden with `--tenant`)
-- `AWS_PROFILE`: AWS CLI profile to use
-- `AWS_SCRIPTS_DIR`: Location of aws-tools (set by aws-aliases.sh)
+- `AWS_PROFILE`: AWS CLI profile to use for operations
 
 ## Contributing
 
