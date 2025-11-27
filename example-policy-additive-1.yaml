@@ -1,0 +1,49 @@
+# Example 1: Base Structure Configuration
+# This config sets up the general folder structure with group-based access
+# 
+# Purpose: Define common folders and assign basic permissions to groups
+# Run first: ./dir-builder.py example-policy-additive-1.yaml
+
+bucket: team-storage
+tenant: sils_mns
+create_bucket: false
+create_directories: true
+create_users: false
+create_groups: true
+
+# Define groups and their members
+groups:
+  researchers:
+    members: [alice, bob, charlie]
+  data-team:
+    members: [alice, david]
+
+directories:
+  name: ""  # Root
+  children:
+    # Shared data folder - all researchers can read
+    - name: shared-data
+      access:
+        level: read
+        groups: [researchers]
+    
+    # Raw data folder - data team has full access
+    - name: raw-data
+      access:
+        level: full
+        groups: [data-team]
+    
+    # Processed results - researchers can read, data team can write
+    - name: results
+      access:
+        - entity: researchers
+          type: group
+          level: read
+        - entity: data-team
+          type: group
+          level: write
+
+# Policy names that will be created:
+# - s3-team-storage-shared-data (researchers: read)
+# - s3-team-storage-raw-data (data-team: full)
+# - s3-team-storage-results (researchers: read, data-team: write)

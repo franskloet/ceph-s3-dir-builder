@@ -1,0 +1,70 @@
+# Example 2: Alice-Specific Access Configuration
+# This config adds additional access for Alice without affecting the base structure
+# 
+# Purpose: Grant Alice special access to her personal folders and elevated privileges
+# Run second: ./dir-builder.py example-policy-additive-2.yaml
+#
+# IMPORTANT: This demonstrates ADDITIVE behavior
+# - Policies from example-policy-additive-1.yaml remain active
+# - New policies are ADDED for Alice's personal folders
+# - Existing policies are NOT modified (different prefixes = different policy names)
+
+bucket: team-storage
+tenant: sils_mns
+create_bucket: false
+create_directories: true
+create_users: false
+create_groups: false  # Groups already exist from first config
+
+directories:
+  name: ""  # Root
+  children:
+    # Alice's personal workspace - full access
+    - name: users
+      children:
+        - name: alice
+          access:
+            level: full
+            users: [alice]
+          children:
+            # Alice's private experiments
+            - name: experiments
+              access:
+                level: full
+                users: [alice]
+            
+            # Alice's drafts - she has full access, but colleagues can read
+            - name: drafts
+              access:
+                - entity: alice
+                  type: user
+                  level: full
+                - entity: researchers
+                  type: group
+                  level: read
+    
+    # Special projects folder - only Alice and David
+    - name: special-projects
+      access:
+        level: full
+        users: [alice, david]
+
+# Policy names that will be created (ADDED to existing ones):
+# - s3-team-storage-users-alice (alice: full)
+# - s3-team-storage-users-alice-experiments (alice: full)
+# - s3-team-storage-users-alice-drafts (alice: full, researchers: read)
+# - s3-team-storage-special-projects (alice: full, david: full)
+#
+# After running BOTH configs, these policies coexist:
+# From config 1:
+#   - s3-team-storage-shared-data (researchers: read)
+#   - s3-team-storage-raw-data (data-team: full)
+#   - s3-team-storage-results (researchers: read, data-team: write)
+# From config 2:
+#   - s3-team-storage-users-alice (alice: full)
+#   - s3-team-storage-users-alice-experiments (alice: full)
+#   - s3-team-storage-users-alice-drafts (alice: full, researchers: read)
+#   - s3-team-storage-special-projects (alice: full, david: full)
+#
+# Result: Alice gets access to both the general folders (via config 1)
+#         AND her personal folders (via config 2)

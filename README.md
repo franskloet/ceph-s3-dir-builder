@@ -390,6 +390,74 @@ The tool executes the following steps:
    - Apply group policies using `aws-add-group-bucket-policy`
    - Apply user policies using `aws-create-user-policy`
 
+## Policy Behavior: Additive vs. Replacement
+
+### How Policies Are Applied
+
+When you run `dir-builder` multiple times with different configuration files, the policies are applied in an **additive manner** across different prefixes, but policies for the same prefix are **replaced**.
+
+#### Key Behavior:
+
+1. **Each policy has a unique name** based on the bucket name and prefix:
+   - Full bucket access: `s3-{bucket}-full`
+   - Prefix-specific: `s3-{bucket}-{prefix}` (e.g., `s3-data-users-alice`)
+
+2. **Policies are additive** when they target different prefixes:
+   - Running `dir-builder` with config A creates policies for prefixes in config A
+   - Running `dir-builder` with config B creates **additional** policies for prefixes in config B
+   - Both sets of policies coexist on the same group
+
+3. **Policies are replaced** when they target the same prefix:
+   - If config A grants group `researchers` read access to `data/experiments/`
+   - Then config B grants group `researchers` full access to `data/experiments/`
+   - The policy for `s3-bucket-data-experiments` is replaced (not merged)
+
+#### Practical Example
+
+If you run:
+```bash
+# First: Grant access to general folders
+./dir-builder.py export-groups.yaml
+
+# Second: Grant Alice additional access to her personal folder
+./dir-builder.py export-groups-alice.yaml
+```
+
+The result:
+- Policies from `export-groups.yaml` remain active
+- Additional policies from `export-groups-alice.yaml` are added
+- If both configs define access to the **same prefix for the same group**, the second one wins
+
+#### Use Cases
+
+**Incremental Access Grant (Additive):**
+```bash
+# Base permissions for all groups
+./dir-builder.py base-structure.yaml
+
+# Add special access for specific users
+./dir-builder.py alice-special-access.yaml
+./dir-builder.py bob-special-access.yaml
+```
+
+**Full Replacement (Re-run same config):**
+```bash
+# Initial setup
+./dir-builder.py my-config.yaml
+
+# Modify my-config.yaml and re-apply
+./dir-builder.py my-config.yaml  # Policies for same prefixes are updated
+```
+
+#### Important Notes
+
+- **No automatic cleanup**: Old policies are not removed unless explicitly deleted
+- **Policy names are deterministic**: Same bucket + prefix = same policy name
+- **Use with caution**: Be aware of which prefixes are defined in each config file
+- **Dry-run is your friend**: Always use `--dry-run` to preview policy changes
+
+For a concrete example, see `example-policy-additive-1.yaml` and `example-policy-additive-2.yaml` in this directory.
+
 ## Integration with aws-tools
 
 This utility uses your existing aws-tools commands:
