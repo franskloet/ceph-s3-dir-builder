@@ -4,10 +4,9 @@
 # Purpose: Grant Alice special access to her personal folders and elevated privileges
 # Run second: ./dir-builder.py example-policy-additive-2.yaml
 #
-# IMPORTANT: This demonstrates ADDITIVE behavior
-# - Policies from example-policy-additive-1.yaml remain active
-# - New policies are ADDED for Alice's personal folders
-# - Existing policies are NOT modified (different prefixes = different policy names)
+# IMPORTANT: This demonstrates both ADDITIVE and REPLACEMENT behavior:
+# - New policies are ADDED for Alice's personal folders (additive)
+# - The policy for 'projects/experiment-2024' is REPLACED to give Alice full access (replacement)
 
 bucket: team-storage
 tenant: sils_mns
@@ -48,23 +47,67 @@ directories:
       access:
         level: full
         users: [alice, david]
+    
+    # IMPORTANT: Alice needs write access to existing experiment folder
+    # We DON'T need to re-specify the researchers group!
+    # User and group policies are independent, so:
+    # - Researchers group policy from config 1 remains untouched
+    # - Alice gets an additional user policy
+    # - Both coexist (IAM combines them)
+    - name: projects
+      children:
+        - name: experiment-2024
+          access:
+            level: full
+            users: [alice]  # Only specify Alice
 
-# Policy names that will be created (ADDED to existing ones):
-# - s3-team-storage-users-alice (alice: full)
-# - s3-team-storage-users-alice-experiments (alice: full)
-# - s3-team-storage-users-alice-drafts (alice: full, researchers: read)
-# - s3-team-storage-special-projects (alice: full, david: full)
+# Policy names that will be created:
+# ADDITIVE (new prefixes):
+# - s3-team-storage-users-alice (alice user: full)
+# - s3-team-storage-users-alice-experiments (alice user: full)
+# - s3-team-storage-users-alice-drafts (alice user: full, researchers group: read)
+# - s3-team-storage-special-projects (alice user: full, david user: full)
+# - s3-team-storage-projects-experiment-2024 (alice user: full)
 #
-# After running BOTH configs, these policies coexist:
-# From config 1:
-#   - s3-team-storage-shared-data (researchers: read)
-#   - s3-team-storage-raw-data (data-team: full)
-#   - s3-team-storage-results (researchers: read, data-team: write)
-# From config 2:
-#   - s3-team-storage-users-alice (alice: full)
-#   - s3-team-storage-users-alice-experiments (alice: full)
-#   - s3-team-storage-users-alice-drafts (alice: full, researchers: read)
-#   - s3-team-storage-special-projects (alice: full, david: full)
+# After running BOTH configs, these IAM policies exist:
 #
-# Result: Alice gets access to both the general folders (via config 1)
-#         AND her personal folders (via config 2)
+# GROUP POLICIES (from config 1 - unchanged):
+#   researchers group:
+#     - s3-team-storage-shared-data (read)
+#     - s3-team-storage-projects-experiment-2024 (read)
+#     - s3-team-storage-results (read)
+#   data-team group:
+#     - s3-team-storage-raw-data (full)
+#     - s3-team-storage-results (write)
+#
+# USER POLICIES (from config 2 - new):
+#   alice user:
+#     - s3-team-storage-users-alice (full)
+#     - s3-team-storage-users-alice-experiments (full)
+#     - s3-team-storage-users-alice-drafts (full)
+#     - s3-team-storage-special-projects (full)
+#     - s3-team-storage-projects-experiment-2024 (full)
+#   researchers group:
+#     - s3-team-storage-users-alice-drafts (read)
+#   david user:
+#     - s3-team-storage-special-projects (full)
+#
+# EFFECTIVE ACCESS for Alice (policies are combined):
+# - shared-data: READ (via researchers group)
+# - raw-data: FULL (via data-team group membership)
+# - results: WRITE (via data-team group)
+# - users/alice/**: FULL (via user policy)
+# - projects/experiment-2024: FULL (via user policy, even though group only has read)
+# - special-projects: FULL (via user policy)
+#
+# KEY INSIGHT:
+# User policies and group policies are INDEPENDENT.
+# You don't need to re-specify group access when adding user access.
+# IAM evaluates all applicable policies and grants the union of permissions.
+#
+# REALISTIC USE CASE:
+# Config 1 set up the initial structure with all researchers having read-only access.
+# Later, Alice needs to write data to experiment-2024. Running config 2:
+# - Grants Alice her personal folders (additive - new user policies)
+# - Grants Alice write access to experiment-2024 (additive - new user policy)
+# - Researchers group policy remains unchanged (not touched by config 2)

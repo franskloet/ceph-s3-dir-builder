@@ -1,0 +1,53 @@
+# Example 5: Alice Gets Access to Another Folder
+# This demonstrates granting additional access to a user incrementally
+# 
+# Run after previous configs to grant Alice access to the archive folder
+# 
+# Result: 
+# - Alice's existing access to experiment-2024 remains unchanged
+# - Alice gets new access to archive folder
+# - Demonstrates incremental permission management
+
+bucket: team-storage
+tenant: sils_mns
+create_bucket: false
+create_directories: true  # Create archive folder if it doesn't exist
+create_users: false
+create_groups: false
+
+directories:
+  name: ""  # Root
+  children:
+    # New archive folder that Alice needs to access
+    - name: archive
+      access:
+        level: full
+        users: [alice]
+
+# What happens:
+# 
+# After running all configs (1, 2, and 5):
+#
+# USER POLICIES for Alice:
+#   - s3-team-storage-users-alice (full)
+#   - s3-team-storage-users-alice-experiments (full)
+#   - s3-team-storage-users-alice-drafts (full)
+#   - s3-team-storage-special-projects (full)
+#   - s3-team-storage-projects-experiment-2024 (full)
+#   - s3-team-storage-archive (full)  <-- NEW
+#
+# EFFECTIVE ACCESS for Alice:
+# - All previous access: UNCHANGED
+# - archive: FULL (new)
+#
+# KEY POINT:
+# You can incrementally add permissions to a user by creating new configs
+# that specify only the new folders. Existing permissions are preserved
+# because each folder creates a policy with a unique name (based on prefix).
+#
+# PRACTICAL USE CASE:
+# This pattern is useful for:
+# - Granting temporary project access
+# - Adding permissions as responsibilities grow
+# - Managing permissions without editing existing configs
+# - Keeping an audit trail (one file per permission grant)

@@ -402,15 +402,21 @@ When you run `dir-builder` multiple times with different configuration files, th
    - Full bucket access: `s3-{bucket}-full`
    - Prefix-specific: `s3-{bucket}-{prefix}` (e.g., `s3-data-users-alice`)
 
-2. **Policies are additive** when they target different prefixes:
+2. **User and group policies are independent**:
+   - Policies attached to a **user** are completely separate from policies attached to a **group**
+   - You can add user-specific access without affecting existing group policies
+   - IAM evaluates all applicable policies (user + all groups) and grants the union of permissions
+
+3. **Policies are additive** when they target different prefixes:
    - Running `dir-builder` with config A creates policies for prefixes in config A
    - Running `dir-builder` with config B creates **additional** policies for prefixes in config B
-   - Both sets of policies coexist on the same group
+   - Both sets of policies coexist on the same entity (user or group)
 
-3. **Policies are replaced** when they target the same prefix:
+4. **Policies are replaced** when they target the same prefix on the same entity:
    - If config A grants group `researchers` read access to `data/experiments/`
    - Then config B grants group `researchers` full access to `data/experiments/`
-   - The policy for `s3-bucket-data-experiments` is replaced (not merged)
+   - The policy `s3-bucket-data-experiments` **on the researchers group** is replaced (not merged)
+   - However, user policies for that prefix remain unaffected
 
 #### Practical Example
 
@@ -424,39 +430,130 @@ If you run:
 ```
 
 The result:
-- Policies from `export-groups.yaml` remain active
-- Additional policies from `export-groups-alice.yaml` are added
-- If both configs define access to the **same prefix for the same group**, the second one wins
+- Group policies from `export-groups.yaml` remain active
+- Additional policies from `export-groups-alice.yaml` are added (likely user policies for Alice)
+- If both configs define access to the **same prefix for the same entity** (user or group), the second one wins
+- User policies and group policies don't conflict (they're on different entities)
 
 #### Use Cases
 
-**Incremental Access Grant (Additive):**
+**Use Case 1: Incremental Access Grant (Additive)**
 ```bash
-# Base permissions for all groups
+# Step 1: Base permissions for all groups
 ./dir-builder.py base-structure.yaml
 
-# Add special access for specific users
+# Step 2: Add special access for specific users
 ./dir-builder.py alice-special-access.yaml
 ./dir-builder.py bob-special-access.yaml
 ```
 
-**Full Replacement (Re-run same config):**
+**Use Case 2: Multiple Users, Same Folder**
+```bash
+# Grant different users access to the same folder incrementally
+./dir-builder.py example-policy-additive-1.yaml       # Base: researchers group gets read
+./dir-builder.py example-policy-additive-2.yaml       # Alice gets write access
+./dir-builder.py example-policy-additive-bob.yaml     # Bob gets write access
+# Result: Alice and Bob both have write access, other researchers have read
+```
+
+**Use Case 3: One User, Multiple Folders Over Time**
+```bash
+# Grant a user access to different folders incrementally
+./dir-builder.py example-policy-additive-2.yaml             # Alice gets experiment-2024 access
+./dir-builder.py example-policy-additive-alice-archive.yaml # Alice gets archive access
+# Result: Alice has access to both folders, previous access unchanged
+```
+
+**Use Case 4: Full Replacement (Re-run same config)**
 ```bash
 # Initial setup
 ./dir-builder.py my-config.yaml
 
 # Modify my-config.yaml and re-apply
-./dir-builder.py my-config.yaml  # Policies for same prefixes are updated
+./dir-builder.py my-config.yaml  # Policies for same prefixes on same entities are updated
 ```
 
 #### Important Notes
 
 - **No automatic cleanup**: Old policies are not removed unless explicitly deleted
-- **Policy names are deterministic**: Same bucket + prefix = same policy name
-- **Use with caution**: Be aware of which prefixes are defined in each config file
+- **Policy names are deterministic**: Same bucket + prefix + entity = same policy name
+- **User/group independence is convenient**: To grant a user access to an existing folder, just specify the user - no need to re-specify existing group access
+- **Use with caution**: Be aware of which prefixes and entities are defined in each config file
 - **Dry-run is your friend**: Always use `--dry-run` to preview policy changes
 
-For a concrete example, see `example-policy-additive-1.yaml` and `example-policy-additive-2.yaml` in this directory.
+For concrete examples demonstrating additive behavior, see:
+- `example-policy-additive-1.yaml` - Base structure with group access
+- `example-policy-additive-2.yaml` - Add Alice-specific access (no need to re-specify groups)
+- `example-policy-additive-3.yaml` - Minimal example showing independent user/group policies
+- `example-policy-additive-bob.yaml` - Grant another user access to the same folder
+- `example-policy-additive-alice-archive.yaml` - Grant Alice access to another folder incrementally
+
+### Incremental Permission Management Patterns
+
+The additive nature of policies enables flexible permission management:
+
+**Pattern 1: Grant Multiple Users Access to Same Folder**
+
+When multiple users need access to the same folder, create separate configs:
+
+```yaml
+# alice-experiment-access.yaml
+directories:
+  name: ""
+  children:
+    - name: projects/experiment-2024
+      access:
+        users: [alice]
+        level: full
+```
+
+```yaml
+# bob-experiment-access.yaml
+directories:
+  name: ""
+  children:
+    - name: projects/experiment-2024
+      access:
+        users: [bob]
+        level: full
+```
+
+Run both configs - each creates an independent user policy.
+
+**Pattern 2: Grant One User Access to Multiple Folders**
+
+When a user needs access to additional folders over time, create new configs:
+
+```yaml
+# alice-archive-access.yaml
+directories:
+  name: ""
+  children:
+    - name: archive
+      access:
+        users: [alice]
+        level: full
+```
+
+This adds to Alice's existing permissions without modifying them.
+
+**Pattern 3: Temporary Project Access**
+
+Grant temporary access by running a config, then later remove the policy manually:
+
+```bash
+# Grant access
+./dir-builder.py temp-project-alice.yaml
+
+# Later, remove the policy
+aws iam delete-user-policy --user-name alice --policy-name s3-bucket-temp-project
+```
+
+**Benefits of Incremental Configs:**
+- **Audit trail**: Each permission grant is a separate file with timestamp
+- **No conflicts**: Different users/folders = different policies
+- **Easy rollback**: Remove specific policies without affecting others
+- **Minimal updates**: Only specify what changes, not the entire structure
 
 ## Integration with aws-tools
 

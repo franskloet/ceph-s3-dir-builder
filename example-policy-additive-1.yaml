@@ -42,8 +42,17 @@ directories:
         - entity: data-team
           type: group
           level: write
+    
+    # Projects folder - initially only group access
+    - name: projects
+      children:
+        - name: experiment-2024
+          access:
+            level: read
+            groups: [researchers]  # Everyone can read initially
 
 # Policy names that will be created:
 # - s3-team-storage-shared-data (researchers: read)
 # - s3-team-storage-raw-data (data-team: full)
 # - s3-team-storage-results (researchers: read, data-team: write)
+# - s3-team-storage-projects-experiment-2024 (researchers: read)

@@ -1,0 +1,62 @@
+# Example 3: Simplified Alice Access - No Group Re-specification Needed
+# This demonstrates that you DON'T need to re-specify the researchers group
+# because user and group policies are independent.
+# 
+# Run after example-policy-additive-1.yaml
+# 
+# Result: 
+# - Researchers group keeps its read access from config 1
+# - Alice gets additional full access via user policy
+# - Both policies coexist independently
+
+bucket: team-storage
+tenant: sils_mns
+create_bucket: false
+create_directories: false  # Already created by config 1
+create_users: false
+create_groups: false  # Groups already exist from first config
+
+directories:
+  name: ""  # Root
+  children:
+    # Alice's personal workspace
+    - name: users
+      children:
+        - name: alice
+          access:
+            level: full
+            users: [alice]
+    
+    # SIMPLIFIED: Just add Alice's access to the experiment folder
+    # No need to re-specify the researchers group!
+    # The researchers group policy from config 1 remains active
+    - name: projects
+      children:
+        - name: experiment-2024
+          access:
+            level: full
+            users: [alice]  # Only specify Alice
+
+# What happens:
+# 
+# After config 1 runs:
+#   - researchers GROUP has policy: s3-team-storage-projects-experiment-2024 (read)
+# 
+# After config 2 runs:
+#   - researchers GROUP still has: s3-team-storage-projects-experiment-2024 (read)
+#   - alice USER has policy: (policy name varies by implementation) (full)
+# 
+# Result for Alice (member of researchers group):
+#   - Gets read access via researchers group membership
+#   - Gets full access via direct user policy
+#   - Effective access: FULL (policies are combined, most permissive wins)
+# 
+# Result for Bob (member of researchers group):
+#   - Gets read access via researchers group membership
+#   - No direct user policy
+#   - Effective access: READ
+# 
+# IMPORTANT: This works because:
+# 1. User policies and group policies are separate IAM entities
+# 2. IAM combines all applicable policies (union of permissions)
+# 3. You don't need to re-specify existing group access when adding user access

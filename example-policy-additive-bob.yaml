@@ -1,0 +1,51 @@
+# Example 4: Bob-Specific Access to Experiment Folder
+# This demonstrates granting another user access to the same folder
+# 
+# Run after example-policy-additive-1.yaml and example-policy-additive-2.yaml
+# 
+# Result: 
+# - Researchers group keeps its read access from config 1
+# - Alice keeps her full access from config 2
+# - Bob gets additional full access via user policy
+# - All policies coexist independently
+
+bucket: team-storage
+tenant: sils_mns
+create_bucket: false
+create_directories: false
+create_users: false
+create_groups: false
+
+directories:
+  name: ""  # Root
+  children:
+    # Bob needs write access to the experiment folder too
+    - name: projects
+      children:
+        - name: experiment-2024
+          access:
+            level: full
+            users: [bob]  # Only specify Bob
+
+# What happens:
+# 
+# After running configs 1, 2, and 4:
+#
+# GROUP POLICIES:
+#   researchers group:
+#     - s3-team-storage-projects-experiment-2024 (read)
+#
+# USER POLICIES:
+#   alice user:
+#     - s3-team-storage-projects-experiment-2024 (full)
+#   bob user:
+#     - s3-team-storage-projects-experiment-2024 (full)
+#
+# EFFECTIVE ACCESS for experiment-2024:
+# - Alice: FULL (via user policy)
+# - Bob: FULL (via user policy)
+# - Charlie (other researcher): READ (via researchers group)
+#
+# KEY POINT:
+# Multiple users can have independent policies for the same folder.
+# Each user's policy is separate and doesn't affect others.
